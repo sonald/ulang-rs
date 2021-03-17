@@ -1,0 +1,220 @@
+use crate::lexer::*;
+use std::str::FromStr;
+
+grammar<'source>;
+
+extern {
+    type Location = usize;
+    type Error = ();
+
+    enum UlangToken<'source> {
+        Pub => UlangToken::Pub,
+        Priv => UlangToken::Priv,
+        Func => UlangToken::Func,
+        Class => UlangToken::Class,
+        For => UlangToken::For,
+        In => UlangToken::In,
+        Return => UlangToken::Return,
+        Match => UlangToken::Match,
+        Let => UlangToken::Let,
+        Break => UlangToken::Break,
+        Continue => UlangToken::Continue,
+        Loop => UlangToken::Loop,
+        If => UlangToken::If,
+        Else => UlangToken::Else,
+
+        LBRACE => UlangToken::LBRACE,
+        RBRACE => UlangToken::RBRACE,
+        LPAREN => UlangToken::LPAREN,
+        RPAREN => UlangToken::RPAREN,
+        LBRACKET => UlangToken::LBRACKET,
+        RBRACKET => UlangToken::RBRACKET,
+        Colon => UlangToken::Colon,
+        Comma => UlangToken::Comma,
+        Dot => UlangToken::Dot,
+        Semicolon => UlangToken::Semicolon,
+        Plus => UlangToken::Plus,
+        Minus => UlangToken::Minus,
+        Multiply => UlangToken::Multiply,
+        Divide => UlangToken::Divide,
+        Assign => UlangToken::Assign,
+        PlusAssign => UlangToken::PlusAssign,
+        MinusAssign => UlangToken::MinusAssign,
+        Equal => UlangToken::Equal,
+        NotEqual => UlangToken::NotEqual,
+        Less => UlangToken::Less,
+        Greater => UlangToken::Greater,
+        Underscore => UlangToken::Underscore,
+        LessEqual => UlangToken::LessEqual,
+        GreaterEqual => UlangToken::GreaterEqual,
+        RightArrow => UlangToken::RightArrow,
+        FatArrow => UlangToken::FatArrow,
+
+        LineComment => UlangToken::LineComment(<&'source str>),
+        PrimType => UlangToken::PrimType(<&'source str>),
+        Ident => UlangToken::Ident(<&'source str>),
+        Decimal => UlangToken::Decimal(<&'source str>),
+    }
+}
+
+pub ulang = compilation_unit;
+
+pub compilation_unit: i32 = { 
+    term* => 42,
+}
+
+term: () = {
+    class,
+    LineComment
+}
+
+class: () = {
+    Class <id:Ident> LBRACE class_body RBRACE => ()
+}
+
+class_body: () = {
+    func => (),
+    class_body func => (),
+}
+
+func: () = {
+    func_decl statements_block => (),
+}
+
+func_decl: () = {
+    Pub Func <id:Ident> LPAREN args_decl RPAREN => (),
+    Pub Func <id:Ident> LPAREN args_decl RPAREN RightArrow type_decl => (),
+    Func <id:Ident> LPAREN args_decl RPAREN => (),
+    Func <id:Ident> LPAREN args_decl RPAREN RightArrow type_decl => (),
+}
+
+args_decl: () = {
+    <arg:Ident> type_decl => (),
+    args_decl Comma <arg:Ident> type_decl => ()
+}
+
+type_decl: () = {
+    // array type
+    <ty:PrimType> LBRACKET RBRACKET => (),
+    // (a,b,...)
+    LPAREN type_decl Comma type_decl RPAREN => (),
+    // base type
+    <ty:PrimType> => (),
+}
+
+statements_block: () = {
+    LBRACE statement* RBRACE => (),
+}
+
+statement: () = {
+    statements_block => (),
+    Let Ident Assign initializer Semicolon => (),
+    Let LPAREN Ident Comma Ident RPAREN Assign initializer Semicolon => (),
+    Ident assignment_operator expression Semicolon,
+    Loop statements_block => (),
+    If expression statements_block (Else statements_block)? => (),
+    For <var:Ident> In <iter:Ident> statements_block => (),
+    Match expression LBRACE match_arms RBRACE => (),
+    expression Semicolon => (),
+    Return Semicolon?,
+    Break Semicolon?,
+}
+
+initializer: () = {
+    expression,
+    type_construct
+}
+
+match_arms: () = {
+    match_expr,
+    match_arms Comma  match_expr
+}
+
+match_expr: () = {
+    match_cond FatArrow statement 
+}
+
+match_cond: () = {
+    Ident,
+    Decimal,
+    Underscore,
+}
+
+expression: i32 = {
+    tuple => 2,
+    expressions_block => 1,
+    binary_expr => 3,
+}
+
+expressions_block: () = {
+    LBRACE statement* expression RBRACE => (),
+}
+
+binary_expr: () = {
+    postfix_expr,
+    postfix_expr binary_operator postfix_expr
+}
+
+binary_operator = {
+    multiplicative_operator, additive_operator, relational_operator
+}
+
+multiplicative_operator = {
+    Multiply, Divide
+}
+
+additive_operator = {
+    Plus, Minus
+}
+
+relational_operator = {
+    Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual
+}
+
+assignment_operator = {
+    Assign, PlusAssign, MinusAssign
+}
+
+// bitwiseOperator ::= '&' | '^' | '|'
+
+postfix_expr: () = {
+// type_construct,
+    postfix_expr Dot <Ident>,
+    postfix_expr LPAREN func_args? RPAREN,
+    postfix_expr LBRACKET index_expr RBRACKET,
+    primitive_expr,
+}
+
+index_expr: () = {
+    Colon,
+    binary_expr (Colon binary_expr?)?,
+}
+
+primitive_expr: () = {
+    Ident,
+    Decimal,
+    Underscore,
+    // Break,
+    // Return,
+    // LPAREN expression RPAREN,
+}
+
+type_construct: () = {
+    type_decl LPAREN RPAREN
+}
+
+func_args: () = {
+    expression,
+    func_args Comma expression
+}
+
+tuple: () = {
+    LPAREN RPAREN => (),
+    LPAREN tuple_items RPAREN => (),
+}
+
+tuple_items: () = {
+    postfix_expr => (),
+    tuple_items Comma postfix_expr => (),
+}
+

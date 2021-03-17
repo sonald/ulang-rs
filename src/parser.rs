@@ -1,30 +1,63 @@
 use crate::lexer::*;
 use logos::{Logos, Lexer};
 
-pub struct Parser<'S> {
-    lex: Lexer<'S, Token>
+use lalrpop_util::lalrpop_mod;
+
+lalrpop_mod!(pub ulang);
+
+#[derive(Debug)]
+pub struct CompilationUnit(Vec<Term>);
+
+#[derive(Debug)]
+pub enum Term {
+    ClassDefinition,
+    FuncDefinition,
 }
 
-impl<'S> Parser<'S> {
-    pub fn new(s: &'S str) -> Parser {
-        Parser {
-            lex: Token::lexer(s)
+#[derive(Debug)]
+pub struct ClassDefinition {
+}
+
+#[derive(Debug)]
+pub struct FuncDefinition {
+}
+
+#[derive(Debug)]
+pub enum Statement {
+}
+
+#[derive(Debug)]
+pub enum LetStatement {
+}
+
+#[derive(Debug)]
+pub enum Expr {
+}
+
+pub struct UlangParser<'s> {
+    lex: Lexer<'s, UlangToken<'s>>
+}
+
+impl<'s> UlangParser<'s> {
+    pub fn new(s: &'s str) -> UlangParser {
+        UlangParser {
+            lex: UlangToken::lexer(s)
         }
     }
 
     pub fn parse(&mut self) {
-        for t in &mut self.lex {
-            match t {
-                Token::Error => unreachable!(),
-                t => eprintln!("{:?} ", t),
-            }
-        }
+        let lex = self.lex.clone().spanned().map(|(tok, range)| (range.start, tok, range.end));
+        let res = ulang::ulangParser::new().parse(lex);
+        println!("{:?}", res);
     }
 
     pub fn lexing_check(&mut self) {
-        for t in &mut self.lex {
+        for t in self.lex.clone() {
             match t {
-                Token::Error => unreachable!(),
+                UlangToken::Error => {
+                    eprintln!("{:?} ", t);
+                    unreachable!()
+                },
                 t => eprintln!("{:?} ", t),
             }
         }

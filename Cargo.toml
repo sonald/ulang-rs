@@ -9,3 +9,10 @@ edition = "2018"
 [dependencies]
 logos = "0.12"
 logos-derive = "0.12"
+actix-web = "3"
+lalrpop-util = "0.19"
+regex = "1"
+
+[build-dependencies] # <-- We added this and everything after!
+lalrpop = "0.19"
+

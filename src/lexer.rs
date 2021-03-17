@@ -1,8 +1,8 @@
 use logos::Lexer;
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq)]
-pub enum Token {
+#[derive(Logos, Debug, Clone, PartialEq)]
+pub enum UlangToken<'source> {
     // keywords
     #[token("pub")]
     Pub,
@@ -24,6 +24,8 @@ pub enum Token {
     Let,
     #[token("break")]
     Break,
+    #[token("continue")]
+    Continue,
     #[token("loop")]
     Loop,
     #[token("if")]
@@ -56,6 +58,10 @@ pub enum Token {
     Plus,
     #[token("-")]
     Minus,
+    #[token("*")]
+    Multiply,
+    #[token("/")]
+    Divide,
     #[token("=")]
     Assign,
     #[token("+=")]
@@ -81,14 +87,17 @@ pub enum Token {
     #[token("=>")]
     FatArrow,
 
-    #[regex(r"[a-zA-Z_]+", |lex| lex.slice().to_owned())]
-    Ident(String),
+    #[regex(r"int|string|int32|bool")]
+    PrimType(&'source str),
 
-    #[regex(r"//[^\n]+", |lex| lex.slice().to_owned())]
-    LineComment(String),
+    #[regex(r"[a-zA-Z_][a-zA-Z_0-9]*", |lex| lex.slice())]
+    Ident(&'source str),
 
-    #[regex(r"[0-9]+", |lex| lex.slice().parse())]
-    Decimal(i32),
+    #[regex(r"//[^\n]+", line_comment)]
+    LineComment(&'source str),
+
+    #[regex(r"[0-9]+")]
+    Decimal(&'source str),
 
     // Logos requires one token variant to handle errors,
     // it can be named anything you wish.
@@ -99,9 +108,8 @@ pub enum Token {
     Error,
 }
 
-fn line_comment(lexer: &mut Lexer<Token>) -> Option<String> {
+fn line_comment<'source>(lexer: &mut Lexer<'source, UlangToken<'source>>) -> Option<&'source str> {
     let s = lexer.slice();
-    eprintln!("{}", s);
-    Some(s.to_owned())
+    Some(s)
 }
 

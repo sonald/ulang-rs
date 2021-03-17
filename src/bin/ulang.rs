@@ -1,15 +1,10 @@
-mod lexer;
-mod parser;
-
-use lexer::*;
-use logos::Logos;
-use parser::*;
+use ::ulang::parser::*;
 
 fn compile() {
     let prog = r"
 // demo program
 class App {
-  fn partition(v: int[]) -> (int[], int[]) {
+  fn partition(v int[]) -> (int[], int[]) {
     let i = 0;
     let pivot = i;
     let j = v.length - 1;
@@ -30,7 +25,7 @@ class App {
     return (v[0:i], v[i+1:]);
   }
   
-  fn quicksort(v: int[]) {
+  fn quicksort(v int[]) {
     match v.length {
       0 => return,
       1 => return,
@@ -52,18 +47,19 @@ class App {
   }
 }
     ";
-    let s = r"
-        // entry of the program
-        pub fn main(args string[]) {
-
-        }
-        ";
 
     //let mut p = Parser::new(prog);
-    let mut p = Parser::new(s);
-    p.lexing_check();
+    //p.lexing_check();
+}
+
+fn test2() {
+    let s = include_str!("../test_file.ulang");
+    let mut p = UlangParser::new(s);
+    //p.lexing_check();
+    p.parse();
 }
 
 fn main() {
     compile();
+    test2();
 }
