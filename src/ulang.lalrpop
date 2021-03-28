@@ -1,5 +1,5 @@
 use crate::lexer::*;
-use std::str::FromStr;
+use crate::parser::ast;
 
 grammar<'source>;
 
@@ -59,162 +59,267 @@ extern {
 
 pub ulang = compilation_unit;
 
-pub compilation_unit: i32 = { 
-    term* => 42,
+pub compilation_unit: ast::CompilationUnit = { 
+    <v:term*> => ast::CompilationUnit(v),
 }
 
-term: () = {
-    class,
-    LineComment
+term: ast::Term = {
+    class => ast::Term::Class(<>),
+    func => ast::Term::Func(<>),
+    // LineComment,
 }
 
-class: () = {
-    Class <id:Ident> LBRACE class_body RBRACE => ()
+class: ast::ClassDefinition = {
+    Class <id:Ident> LBRACE <v:class_body> RBRACE => {
+        ast::ClassDefinition {
+            name: id.to_owned(),
+            funcs: Some(v)
+        }
+    }
 }
 
-class_body: () = {
-    func => (),
-    class_body func => (),
+class_body: Vec<ast::FuncDefinition> = {
+    func => vec![<>],
+    <v:class_body> <f:func> => {
+        let mut v = v;
+        v.push(f);
+        v
+    }
 }
 
-func: () = {
-    func_decl statements_block => (),
+func: ast::FuncDefinition = {
+    <d:func_decl> <v:statements_block> => ast::FuncDefinition {
+        name: d.0.to_owned(),
+        args: d.1,
+        rettype: d.2,
+        statements: ast::StatementBlock(v)
+    },
 }
 
-func_decl: () = {
-    Pub Func <id:Ident> LPAREN args_decl RPAREN => (),
-    Pub Func <id:Ident> LPAREN args_decl RPAREN RightArrow type_decl => (),
-    Func <id:Ident> LPAREN args_decl RPAREN => (),
-    Func <id:Ident> LPAREN args_decl RPAREN RightArrow type_decl => (),
+func_decl: (&'source str, Vec<ast::Symbol>, Option<String>) = {
+    Pub Func <id:Ident> LPAREN <a:args_decl> RPAREN => (<>, None),
+    Pub Func <id:Ident> LPAREN <a:args_decl> RPAREN RightArrow <ret:type_decl> => (id, a, Some(ret)),
+    Func <id:Ident> LPAREN <a:args_decl> RPAREN => (<>, None),
+    Func <id:Ident> LPAREN <a:args_decl> RPAREN RightArrow <ret:type_decl> => (id, a, Some(ret)),
 }
 
-args_decl: () = {
-    <arg:Ident> type_decl => (),
-    args_decl Comma <arg:Ident> type_decl => ()
+args_decl: Vec<ast::Symbol> = {
+    <arg:Ident> <ty:type_decl> => {
+        let mut v = vec![];
+        v.push(ast::Symbol {
+            name: arg.to_owned(),
+            ty: ty
+        });
+        v
+    },
+    <v:args_decl> Comma <arg:Ident> <ty:type_decl> => {
+        let mut v = v;
+        v.push(ast::Symbol {
+            name: arg.to_owned(),
+            ty: ty
+        });
+        v
+    }
 }
 
-type_decl: () = {
+type_decl: String = {
     // array type
-    <ty:PrimType> LBRACKET RBRACKET => (),
+    <ty:PrimType> LBRACKET RBRACKET => format!("{}[]", ty),
     // (a,b,...)
-    LPAREN type_decl Comma type_decl RPAREN => (),
+    LPAREN <a:type_decl> Comma <b:type_decl> RPAREN => format!("({}, {})", a, b),
     // base type
-    <ty:PrimType> => (),
+    <ty:PrimType> => format!("{}", ty),
 }
 
-statements_block: () = {
-    LBRACE statement* RBRACE => (),
+statements_block: Vec<ast::Statement> = {
+    LBRACE <statement*> RBRACE,
 }
 
-statement: () = {
-    statements_block => (),
-    Let Ident Assign initializer Semicolon => (),
-    Let LPAREN Ident Comma Ident RPAREN Assign initializer Semicolon => (),
-    Ident assignment_operator expression Semicolon,
-    Loop statements_block => (),
-    If expression statements_block (Else statements_block)? => (),
-    For <var:Ident> In <iter:Ident> statements_block => (),
-    Match expression LBRACE match_arms RBRACE => (),
-    expression Semicolon => (),
-    Return Semicolon?,
-    Break Semicolon?,
+statement: ast::Statement = {
+    Let <id:Ident> Assign <init:initializer> Semicolon => ast::Statement::Let {
+        val: id.to_owned(),
+        init: Some(init),
+    },
+    Let LPAREN <id:Ident> Comma Ident RPAREN Assign <init:initializer> Semicolon => ast::Statement::Let {
+        val: id.to_owned(),
+        init: Some(init)
+    },
+    <lhs:primitive_expr> <op:assignment_operator> <rhs:expression> Semicolon => ast::Statement::Assignment {
+        lhs, op, rhs
+    },
+    Loop <statements_block> => ast::Statement::Loop(ast::StatementBlock(<>)),
+    If <expr:expression> <s1:statements_block> <s2:(Else <statements_block>)?> => ast::Statement::Conditional {
+        predicate: expr,
+        positive: ast::StatementBlock(s1),
+        negative: ast::StatementBlock(s2.unwrap_or(vec![]))
+    },
+    For <var:Ident> In <expr:Ident> <block:statements_block> => ast::Statement::For {
+        var: var.to_owned(), expr: expr.to_owned(), block: ast::StatementBlock(block)
+    },
+    Match <expr:expression> LBRACE <arms:match_arms> RBRACE => ast::Statement::Match {
+        expr: expr, arms: ast::StatementBlock(arms)
+    },
+    <expression> Semicolon => ast::Statement::Expr(<>),
+    //Return Semicolon? => ast::Statement::Return(None),
+    Return expression Semicolon => ast::Statement::Return(None),
+    Break Semicolon? => ast::Statement::Break,
 }
 
-initializer: () = {
+initializer: ast::Expression = {
     expression,
     type_construct
 }
 
-match_arms: () = {
-    match_expr,
-    match_arms Comma  match_expr
+match_arms: Vec<ast::Statement> = {
+    match_expr => vec![<>],
+    <v:match_arms> Comma <e:match_expr> => {
+        let mut v = v;
+        v.push(e);
+        v
+    }
 }
 
-match_expr: () = {
-    match_cond FatArrow statement 
+match_expr: ast::Statement = {
+    <condition:match_cond> FatArrow <stat:statement> => ast::Statement::MatchArm {
+        condition: condition, stat: ast::StatementBlock(vec![stat])
+    },
+    <condition:match_cond> FatArrow <stat:statements_block> => ast::Statement::MatchArm {
+        condition: condition, stat: ast::StatementBlock(stat)
+    },
 }
 
-match_cond: () = {
-    Ident,
-    Decimal,
-    Underscore,
+match_cond: ast::Expression = {
+    Ident => ast::Expression::SymbolExpr(<>.to_owned()),
+    Decimal => ast::Expression::DecimalExpr(<>.parse::<i32>().unwrap()),
+    Underscore => ast::Expression::SymbolExpr("_".to_owned()),
 }
 
-expression: i32 = {
-    tuple => 2,
-    expressions_block => 1,
-    binary_expr => 3,
+expression: ast::Expression = {
+    tuple,
+    expressions_block,
+    binary_expr,
 }
 
-expressions_block: () = {
-    LBRACE statement* expression RBRACE => (),
+expressions_block: ast::Expression = {
+    LBRACE <v:statement*> <e:expression> RBRACE => ast::Expression::Block {
+        stats: v,
+        expr: Box::new(e)
+    }
 }
 
-binary_expr: () = {
+binary_expr: ast::Expression = {
     postfix_expr,
-    postfix_expr binary_operator postfix_expr
+    // left association
+    <lhs:binary_expr> <op:binary_operator> <rhs:postfix_expr> => ast::Expression::BinaryExpr {
+        op: op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs)
+    }
 }
 
-binary_operator = {
+binary_operator: ast::Operator = {
     multiplicative_operator, additive_operator, relational_operator
 }
 
-multiplicative_operator = {
-    Multiply, Divide
+multiplicative_operator: ast::Operator = {
+    Multiply => ast::Operator::Multiply,
+    Divide => ast::Operator::Divide,
 }
 
-additive_operator = {
-    Plus, Minus
+additive_operator: ast::Operator = {
+    Plus => ast::Operator::Plus,
+    Minus => ast::Operator::Minus, 
 }
 
-relational_operator = {
-    Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual
+relational_operator: ast::Operator = {
+    Equal => ast::Operator::Equal,
+    NotEqual => ast::Operator::NotEqual,
+    Greater => ast::Operator::Greater,
+    GreaterEqual => ast::Operator::GreaterEqual,
+    Less => ast::Operator::Less,
+    LessEqual => ast::Operator::LessEqual,
 }
 
-assignment_operator = {
-    Assign, PlusAssign, MinusAssign
+assignment_operator: ast::Operator = {
+    Assign => ast::Operator::Assign,
+    PlusAssign => ast::Operator::PlusAssign,
+    MinusAssign => ast::Operator::MinusAssign
 }
 
 // bitwiseOperator ::= '&' | '^' | '|'
 
-postfix_expr: () = {
-// type_construct,
-    postfix_expr Dot <Ident>,
-    postfix_expr LPAREN func_args? RPAREN,
-    postfix_expr LBRACKET index_expr RBRACKET,
+postfix_expr: ast::Expression = {
+    field_expr,
+    <callee:postfix_expr> LPAREN <args:func_args?> RPAREN => ast::Expression::CallExpr {
+        callee: Box::new(callee),
+        args: ast::ExpressionList(args.unwrap_or(vec![]))
+    },
+    <o:postfix_expr> LBRACKET <idx:index_expr> RBRACKET => ast::Expression::IndexExpr {
+        object: Box::new(o),
+        index: Box::new(idx)
+    },
     primitive_expr,
 }
 
-index_expr: () = {
-    Colon,
-    binary_expr (Colon binary_expr?)?,
+// right association
+field_expr: ast::Expression = {
+    <o:Ident> Dot <id:Ident> => ast::Expression::FieldExpr {
+        object: Box::new(ast::Expression::SymbolExpr(o.to_owned())),
+        field: Box::new(ast::Expression::SymbolExpr(id.to_owned())),
+
+    },
+    <o:Ident> Dot <f:field_expr> => ast::Expression::FieldExpr {
+        object: Box::new(ast::Expression::SymbolExpr(o.to_owned())),
+        field: Box::new(f),
+    },
 }
 
-primitive_expr: () = {
-    Ident,
-    Decimal,
-    Underscore,
-    // Break,
-    // Return,
+index_expr: ast::Expression = {
+    Colon => ast::Expression::RangeExpr {
+        start: None, end: None
+    },
+    <lhs:binary_expr> <rhs:(Colon <binary_expr?>)?> => {
+        match rhs {
+            Some(rhs) => ast::Expression::RangeExpr {
+                start: Some(Box::new(lhs)),
+                end: rhs.map(|e| Box::new(e))
+            },
+            None => lhs // not a range expr
+        }
+    },
+}
+
+primitive_expr: ast::Expression = {
+    Ident => ast::Expression::SymbolExpr(<>.to_owned()),
+    Decimal => ast::Expression::DecimalExpr(<>.parse::<i32>().unwrap()),
+    Underscore => ast::Expression::SymbolExpr("_".to_owned()),
     // LPAREN expression RPAREN,
 }
 
-type_construct: () = {
-    type_decl LPAREN RPAREN
+type_construct: ast::Expression = {
+    <type_decl> LPAREN RPAREN => ast::Expression::TypeExpr(ast::TypeConstruct{name: <>}),
 }
 
-func_args: () = {
-    expression,
-    func_args Comma expression
+func_args: Vec<ast::Expression> = {
+    expression => vec![<>],
+    <v:func_args> Comma <e:expression> => {
+        let mut v = v;
+        v.push(e);
+        v
+    }
 }
 
-tuple: () = {
-    LPAREN RPAREN => (),
-    LPAREN tuple_items RPAREN => (),
+tuple: ast::Expression = {
+    LPAREN RPAREN => ast::Expression::Tuple(ast::ExpressionList(vec![])),
+    LPAREN <tuple_items> RPAREN => ast::Expression::Tuple(ast::ExpressionList(<>)),
 }
 
-tuple_items: () = {
-    postfix_expr => (),
-    tuple_items Comma postfix_expr => (),
+tuple_items: Vec<ast::Expression> = {
+    postfix_expr => vec![<>],
+    <v:tuple_items> Comma <e:postfix_expr> => {
+        let mut v = v;
+        v.push(e);
+        v
+    }
 }
 

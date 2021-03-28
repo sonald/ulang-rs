@@ -1,4 +1,3 @@
-// demo program
 class App {
   fn partition(v int[]) -> (int[], int[]) {
     let i = 0;
