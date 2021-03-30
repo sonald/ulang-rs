@@ -160,8 +160,7 @@ statement: ast::Statement = {
         expr: expr, arms: ast::StatementBlock(arms)
     },
     <expression> Semicolon => ast::Statement::Expr(<>),
-    //Return Semicolon? => ast::Statement::Return(None),
-    Return expression Semicolon => ast::Statement::Return(None),
+    Return <e:expression?> Semicolon => ast::Statement::Return(e),
     Break Semicolon? => ast::Statement::Break,
 }
 
@@ -182,6 +181,9 @@ match_arms: Vec<ast::Statement> = {
 match_expr: ast::Statement = {
     <condition:match_cond> FatArrow <stat:statement> => ast::Statement::MatchArm {
         condition: condition, stat: ast::StatementBlock(vec![stat])
+    },
+    <condition:match_cond> FatArrow Return => ast::Statement::MatchArm {
+        condition: condition, stat: ast::StatementBlock(vec![])
     },
     <condition:match_cond> FatArrow <stat:statements_block> => ast::Statement::MatchArm {
         condition: condition, stat: ast::StatementBlock(stat)
