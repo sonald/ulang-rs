@@ -1,0 +1,8 @@
+pub fn test(x int32) -> int32 {
+    return 43;
+}
+
+pub fn main(args string[]) {
+    return 42;
+}
+

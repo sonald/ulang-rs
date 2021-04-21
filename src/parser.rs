@@ -5,9 +5,8 @@ use lalrpop_util::lalrpop_mod;
 
 lalrpop_mod!(pub ulang);
 
-mod ast {
+pub mod ast {
 use std::fmt::{Display, Formatter, Error};
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct CompilationUnit(pub Vec<Term>);
@@ -24,6 +23,7 @@ pub struct ClassDefinition {
     pub funcs: Option<Vec<FuncDefinition>>
 }
 
+//TODO: need real type annotation
 pub type TypeName = String;
 pub type SymbolName = String;
 
@@ -32,8 +32,6 @@ pub struct Symbol {
     pub name: SymbolName,
     pub ty: TypeName,
 }
-
-pub type SymbolTable = HashMap<SymbolName, Symbol>;
 
 #[derive(Debug)]
 pub struct StatementBlock(pub Vec<Statement>);
@@ -298,11 +296,11 @@ impl<'s> UlangParser<'s> {
         }
     }
 
-    pub fn parse(&mut self) {
+    pub fn parse(&mut self) -> ast::CompilationUnit {
         let lex = self.lex.clone().spanned().map(|(tok, range)| (range.start, tok, range.end));
         let res = ulang::ulangParser::new().parse(lex);
-        println!("{:?}", res);
-        println!("{}", res.unwrap());
+        //println!("{:?}", res);
+        res.unwrap()
     }
 
     pub fn lexing_check(&mut self) {
