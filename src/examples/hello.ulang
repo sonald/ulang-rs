@@ -1,8 +1,9 @@
 pub fn test(x int32) -> int32 {
-    return 43;
+    return 43 - x;
 }
 
 pub fn main(args string[]) {
-    return 42;
+    let x = test(1);
+    return x + test(40);
 }
 
