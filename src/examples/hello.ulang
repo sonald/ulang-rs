@@ -4,6 +4,10 @@ pub fn test(x int32) -> int32 {
 
 pub fn main(args string[]) {
     let x = test(1);
-    return x + test(40);
+    let y = test(40);
+    let z = test(41);
+    x = x + y;
+    z += x;
+    return z;
 }
 

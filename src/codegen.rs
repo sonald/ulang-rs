@@ -76,8 +76,14 @@ impl Codegen for ast::Expression {
                 Ok(Some(val.as_basic_value_enum()))
             },
             E::BinaryExpr{op, lhs, rhs} => {
-                let lval = lhs.codegen(cg).unwrap().unwrap();
-                let rval = rhs.codegen(cg).unwrap().unwrap();
+                let mut lval = lhs.codegen(cg).unwrap().unwrap();
+                let mut rval = rhs.codegen(cg).unwrap().unwrap();
+                if lval.is_pointer_value() {
+                    lval = cg.builder.build_load(lval.into_pointer_value(), "lvaltmp");
+                }
+                if rval.is_pointer_value() {
+                    rval = cg.builder.build_load(rval.into_pointer_value(), "rvaltmp");
+                }
                 let v = match op {
                     &Op::Minus => {
                         cg.builder.build_int_sub(
@@ -148,13 +154,17 @@ impl Codegen for ast::Expression {
 
 impl Codegen for ast::Statement {
     fn codegen<'a, 'b, 'ctx>(&self, cg: &'b mut Backend<'a, 'ctx>) -> CodegenResult<'ctx> {
+        eprintln!("cg:Stmt {:?}", self);
         use ast::Statement as S;
         match self {
             S::Return(maybe_expr) => {
                 match maybe_expr {
                     Some(expr) => {
                         let retval = expr.codegen(cg).unwrap();
-                        let retval = retval.unwrap();
+                        let mut retval = retval.unwrap();
+                        if retval.is_pointer_value() {
+                            retval = cg.builder.build_load(retval.into_pointer_value(), "rettmp");
+                        }
                         cg.builder.build_return(Some(&retval));
                     },
                     _ => {
@@ -169,13 +179,40 @@ impl Codegen for ast::Statement {
                 let func = cg.current_func.as_ref().unwrap();
                 let nm = func.get_name().to_string_lossy();
                 let env = cg.envs.get_mut(nm.as_ref()).unwrap();
-                env.syms.entry(val.clone()).or_insert(SymbolValue {value: init_val});
 
                 let ptr = cg.builder.build_alloca(init_val.get_type(), &val);
                 cg.builder.build_store(ptr, init_val);
+                env.syms.entry(val.clone()).or_insert(SymbolValue {value: ptr.as_basic_value_enum()});
+            },
+            S::Assignment{lhs, op, rhs} => {
+                use ast::Operator as Op;
+                let mut rval = rhs.codegen(cg).unwrap().unwrap();
+                if rval.is_pointer_value() {
+                    rval = cg.builder.build_load(rval.into_pointer_value(), "ptrtmp");
+                }
+                
+                let lval = lhs.codegen(cg).unwrap().unwrap();
+                let ptr = lval.into_pointer_value();
+
+
+                match op {
+                    Op::Assign => {
+                        cg.builder.build_store(ptr, rval);
+                    },
+                    Op::PlusAssign => {
+                        let lval_rval = cg.builder.build_load(ptr, "ptrtmp");
+                        let addtmp = cg.builder.build_int_add(
+                            lval_rval.into_int_value(), rval.into_int_value(), "addtmp");
+                        cg.builder.build_store(ptr, addtmp);
+                    },
+                    Op::MinusAssign => {
+                        unreachable!()
+                    },
+                    _ => unreachable!(),
+                }
             },
             _ => {
-                unimplemented!("stmt")
+                unimplemented!("stmt codegen")
             }
         }
         Ok(None)
