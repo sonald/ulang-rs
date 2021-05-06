@@ -38,6 +38,7 @@ extern {
         Multiply => UlangToken::Multiply,
         Divide => UlangToken::Divide,
         Assign => UlangToken::Assign,
+        Not => UlangToken::Not,
         PlusAssign => UlangToken::PlusAssign,
         MinusAssign => UlangToken::MinusAssign,
         Equal => UlangToken::Equal,
@@ -210,13 +211,26 @@ expressions_block: ast::Expression = {
 }
 
 binary_expr: ast::Expression = {
-    postfix_expr,
+    unary_expr,
     // left association
     <lhs:binary_expr> <op:binary_operator> <rhs:postfix_expr> => ast::Expression::BinaryExpr {
         op: op,
         lhs: Box::new(lhs),
         rhs: Box::new(rhs)
     }
+}
+
+unary_expr: ast::Expression = {
+    <op:unary_operator> <e:unary_expr> => ast::Expression::UnaryExpr {
+        op: op, expr: Box::new(e)
+    }, 
+    postfix_expr
+}
+
+unary_operator: ast::Operator = {
+    Plus => ast::Operator::Plus,
+    Minus => ast::Operator::Minus, 
+    Not => ast::Operator::Not,
 }
 
 binary_operator: ast::Operator = {

@@ -68,6 +68,8 @@ pub enum UlangToken<'source> {
     PlusAssign,
     #[token("-=")]
     MinusAssign,
+    #[token("!")]
+    Not,
     #[token("==")]
     Equal,
     #[token("!=")]

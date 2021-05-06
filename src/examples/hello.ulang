@@ -8,6 +8,7 @@ pub fn main(args string[]) {
     let z = test(41);
     x = x + y;
     z += x;
-    return z;
+    z -= y;
+    return -z;
 }
 

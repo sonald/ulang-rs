@@ -75,6 +75,19 @@ impl Codegen for ast::Expression {
                 let val = cg.ctx.i32_type().const_int(*n as u64, false);
                 Ok(Some(val.as_basic_value_enum()))
             },
+            E::UnaryExpr{op, expr} => {
+                let mut val = expr.codegen(cg).unwrap().unwrap();
+                if val.is_pointer_value() {
+                    val = cg.builder.build_load(val.into_pointer_value(), "ptrtmp");
+                }
+
+                let fun = match op {
+                    &Op::Minus => Builder::build_int_neg,
+                    &Op::Not => Builder::build_not,
+                    _ => unreachable!("invalid unary operator"),
+                };
+                Ok(Some(fun(cg.builder, val.into_int_value(), "unarytmp").as_basic_value_enum()))
+            },
             E::BinaryExpr{op, lhs, rhs} => {
                 let mut lval = lhs.codegen(cg).unwrap().unwrap();
                 let mut rval = rhs.codegen(cg).unwrap().unwrap();
@@ -116,11 +129,9 @@ impl Codegen for ast::Expression {
                         };
 
                         cg.builder.build_int_compare(
-                            pred, lval.into_int_value(), rval.into_int_value(), "cmptmp")
+                            pred, lval.into_int_value(), rval.into_int_value(), "icmptmp")
                     },
-                    _ => {
-                        unimplemented!("")
-                    }
+                    _ => { unimplemented!("") }
                 };
                 Ok(Some(v.as_basic_value_enum()))
             },
@@ -195,21 +206,21 @@ impl Codegen for ast::Statement {
                 let ptr = lval.into_pointer_value();
 
 
-                match op {
-                    Op::Assign => {
-                        cg.builder.build_store(ptr, rval);
-                    },
+                let tmp = match op {
+                    Op::Assign => rval.into_int_value(),
                     Op::PlusAssign => {
                         let lval_rval = cg.builder.build_load(ptr, "ptrtmp");
-                        let addtmp = cg.builder.build_int_add(
-                            lval_rval.into_int_value(), rval.into_int_value(), "addtmp");
-                        cg.builder.build_store(ptr, addtmp);
+                        cg.builder.build_int_add(lval_rval.into_int_value(), rval.into_int_value(), "addtmp")
                     },
                     Op::MinusAssign => {
-                        unreachable!()
+                        let lval_rval = cg.builder.build_load(ptr, "ptrtmp");
+                        cg.builder
+                            .build_int_sub(lval_rval.into_int_value(), rval.into_int_value(), "subtmp")
                     },
                     _ => unreachable!(),
-                }
+                };
+
+                cg.builder.build_store(ptr, tmp);
             },
             _ => {
                 unimplemented!("stmt codegen")

@@ -104,6 +104,8 @@ pub enum Operator {
 
     // unary
     Negative,
+    //Plus
+    Not,
 }
 
 #[derive(Debug)]
