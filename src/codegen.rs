@@ -17,7 +17,25 @@ pub struct SymbolValue<'ctx> {
 
 #[derive(Debug)]
 pub struct Env<'ctx> {
-    syms: HashMap<String, SymbolValue<'ctx>>,
+    // symbol table stack
+    syms: Vec<HashMap<String, SymbolValue<'ctx>>>,
+}
+
+impl<'ctx> Env<'ctx> {
+    pub fn get(&self, nm: &str) -> Option<&SymbolValue<'ctx>> {
+        self.syms.iter().rev().find_map(|t| t.get(nm))
+    }
+
+    pub fn insert(&mut self, nm: String, value: BasicValueEnum<'ctx>) {
+        if self.syms.is_empty() {
+            self.syms.push(HashMap::new());
+        }
+        if self.syms.last().unwrap().contains_key(&nm) {
+            panic!("symbol({}) has defined", &nm)
+        }
+
+        self.syms.last_mut().map(|tbl| tbl.entry(nm).or_insert(SymbolValue {value}));
+    }
 }
 
 #[derive(Debug)]
@@ -28,7 +46,6 @@ pub struct Backend<'a, 'ctx> {
     pub builder: &'a Builder<'ctx>,
 
     pub current_func: Option<FunctionValue<'ctx>>,
-    pub current_block: Option<BasicBlock<'ctx>>,
 
     // map<func, env> right now, we only have functions
     pub envs: HashMap<String, Env<'ctx>>,
@@ -168,6 +185,54 @@ impl Codegen for ast::Statement {
         eprintln!("cg:Stmt {:?}", self);
         use ast::Statement as S;
         match self {
+            S::Expr(e) => {
+                e.codegen(cg).unwrap();
+            },
+            S::Match{expr, arms} => {
+                // convert matches into if-elses for simplicity
+                let func = cg.current_func.unwrap();
+                let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cond_bb.get_terminator().is_some() {
+                    cond_bb = cg.ctx.append_basic_block(func, "cond_bb");
+                    cg.builder.position_at_end(cond_bb);
+                }
+
+                let mut cond = expr.codegen(cg).unwrap().unwrap();
+                if cond.is_pointer_value() {
+                    cond = cg.builder.build_load(cond.into_pointer_value(), "ptrtmp");
+                }
+
+                let default_bb = cg.ctx.append_basic_block(func, "default_bb");
+                let next_bb = cg.ctx.append_basic_block(func, "next_bb");
+
+                //FIXME: only support int now!
+                let mut branches = vec![];
+                for arm in &arms.0 {
+                    if let S::MatchArm{condition, stat} = arm {
+                        cg.builder.position_at_end(cond_bb);
+                        let ival = condition.codegen(cg).unwrap().unwrap();
+
+                        let arm_bb = cg.ctx.append_basic_block(func, "arm_bb");
+                        cg.builder.position_at_end(arm_bb);
+                        stat.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
+                        if arm_bb.get_terminator().is_none() {
+                            cg.builder.build_unconditional_branch(next_bb);
+                        }
+
+                        branches.push((ival.into_int_value(), arm_bb));
+
+                    } else {
+                        panic!("invalid match arm statement")
+                    }
+                }
+
+                cg.builder.position_at_end(cond_bb);
+                cg.builder.build_switch(cond.into_int_value(), default_bb, branches.as_slice());
+
+                cg.builder.position_at_end(default_bb);
+                cg.builder.build_unconditional_branch(next_bb);
+                cg.builder.position_at_end(next_bb);
+            },
             S::Return(maybe_expr) => {
                 match maybe_expr {
                     Some(expr) => {
@@ -187,13 +252,10 @@ impl Codegen for ast::Statement {
                 let init = init.as_ref().expect("need an initializer");
                 let init_val = init.codegen(cg).unwrap().unwrap();
 
-                let func = cg.current_func.as_ref().unwrap();
-                let nm = func.get_name().to_string_lossy();
-                let env = cg.envs.get_mut(nm.as_ref()).unwrap();
-
                 let ptr = cg.builder.build_alloca(init_val.get_type(), &val);
                 cg.builder.build_store(ptr, init_val);
-                env.syms.entry(val.clone()).or_insert(SymbolValue {value: ptr.as_basic_value_enum()});
+
+                cg.insert_symbol(val.clone(), ptr.as_basic_value_enum());
             },
             S::Assignment{lhs, op, rhs} => {
                 use ast::Operator as Op;
@@ -265,13 +327,13 @@ impl Codegen for ast::FuncDefinition {
         };
 
         let mut env = Env {
-            syms: HashMap::new()
+            syms: vec![]
         };
         let func = cg.module.add_function(&self.name, fn_ty, None);
 
         for (i, param) in func.get_param_iter().enumerate() {
             param.set_name(&self.args[i].name);
-            env.syms.insert(self.args[i].name.clone(), SymbolValue {value: param});
+            env.insert(self.args[i].name.clone(), param);
         }
         cg.envs.insert(self.name.clone(), env);
 
@@ -296,16 +358,23 @@ impl<'a, 'ctx> Backend<'a, 'ctx> {
             builder,
 
             current_func: None,
-            current_block: None,
 
             envs: HashMap::new()
         }
+    }
+
+    pub fn insert_symbol(&mut self, nm: String, value: BasicValueEnum<'ctx>) {
+        let func = self.current_func.as_ref().unwrap();
+        let func_nm = func.get_name().to_string_lossy();
+        let env = self.envs.get_mut(func_nm.as_ref()).unwrap();
+
+        env.insert(nm, value);
     }
 
     pub fn get_symbol(&self, sym: &str) -> Option<&SymbolValue<'ctx>> {
         let func = self.current_func.as_ref().unwrap();
         let nm = func.get_name().to_string_lossy();
         let env = self.envs.get(nm.as_ref()).unwrap();
-        env.syms.get(sym)
+        env.get(sym)
     }
 }

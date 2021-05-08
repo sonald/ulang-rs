@@ -93,6 +93,8 @@ fn run(filename: Option<&str>, cmd: &CompileCommand) -> Result<()> {
             let ret = func.call();
             println!("ret = {}", ret);
         }
+    } else {
+        eprintln!("no entry function (main) found");
     }
     Ok(())
 }
