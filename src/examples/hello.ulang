@@ -2,6 +2,23 @@ pub fn test(x int32) -> int32 {
     return 43 - x;
 }
 
+fn test2() -> int32 {
+    let z = 42;
+    let y = 2;
+    y = 1;
+    match y {
+        0 => {
+            y = z;
+        },
+        1 => {
+            return 2;
+        },
+        3 => {return 3;}
+    }
+
+    return y;
+}
+
 pub fn main(args string[]) {
     let x = test(1);
     let y = test(40);
@@ -10,14 +27,7 @@ pub fn main(args string[]) {
     z += x;
     z -= y;
 
-    y = 0;
-    match y {
-        0 => {
-            y = z;
-        },
-        1 => {return 2;},
-        3 => {return 3;}
-    }
-    return y;
+    z += test2();
+    return z;
 }
 

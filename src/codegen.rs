@@ -170,7 +170,7 @@ impl Codegen for ast::Expression {
                 }
             },
             E::SymbolExpr(sym) => {
-                let sym = cg.get_symbol(sym).unwrap();
+                let sym = cg.get_symbol(sym).expect(&format!("symbol({}) does not defined.", &sym));
                 Ok(Some(sym.value))
             },
             _ => {

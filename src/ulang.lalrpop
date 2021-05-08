@@ -98,10 +98,10 @@ func: ast::FuncDefinition = {
 }
 
 func_decl: (&'source str, Vec<ast::Symbol>, Option<String>) = {
-    Pub Func <id:Ident> LPAREN <a:args_decl> RPAREN => (<>, None),
-    Pub Func <id:Ident> LPAREN <a:args_decl> RPAREN RightArrow <ret:type_decl> => (id, a, Some(ret)),
-    Func <id:Ident> LPAREN <a:args_decl> RPAREN => (<>, None),
-    Func <id:Ident> LPAREN <a:args_decl> RPAREN RightArrow <ret:type_decl> => (id, a, Some(ret)),
+    Pub Func <id:Ident> LPAREN <a:args_decl?> RPAREN => (id, a.unwrap_or(vec![]), None),
+    Pub Func <id:Ident> LPAREN <a:args_decl?> RPAREN RightArrow <ret:type_decl> => (id, a.unwrap_or(vec![]), Some(ret)),
+    Func <id:Ident> LPAREN <a:args_decl?> RPAREN => (id, a.unwrap_or(vec![]), None),
+    Func <id:Ident> LPAREN <a:args_decl?> RPAREN RightArrow <ret:type_decl> => (id, a.unwrap_or(vec![]), Some(ret)),
 }
 
 args_decl: Vec<ast::Symbol> = {
