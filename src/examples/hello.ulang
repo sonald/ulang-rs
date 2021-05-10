@@ -19,6 +19,18 @@ fn test2() -> int32 {
     return y;
 }
 
+fn test3() -> int32 {
+    let x = 1;
+    loop {
+        x += 1;
+        if x > 10 {
+            return x;
+        }
+    }
+
+    return 0;
+}
+
 pub fn main(args string[]) {
     let x = test(1);
     let y = test(40);
@@ -33,6 +45,6 @@ pub fn main(args string[]) {
     } else {
         z = 0;
     }
-    return z;
+    return test3();
 }
 

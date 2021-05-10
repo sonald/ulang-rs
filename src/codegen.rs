@@ -183,6 +183,28 @@ impl Codegen for ast::Statement {
             S::Expr(e) => {
                 e.codegen(cg).unwrap();
             },
+            S::Loop(statements) => {
+                let func = cg.current_func.unwrap();
+                let loop_entry = cg.ctx.append_basic_block(func, "loop_entry");
+                let loop_tail = cg.ctx.append_basic_block(func, "loop_tail");
+
+                let cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cond_bb.get_terminator().is_none() {
+                    cg.builder.position_at_end(cond_bb);
+                    cg.builder.build_unconditional_branch(loop_entry);
+                }
+
+                cg.builder.position_at_end(loop_entry);
+                statements.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
+
+                let next_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if next_bb.get_terminator().is_none() {
+                    cg.builder.build_unconditional_branch(loop_tail);
+                }
+
+                cg.builder.position_at_end(loop_tail);
+                cg.builder.build_unconditional_branch(loop_entry);
+            },
             S::Conditional{predicate, positive, negative} => {
                 let func = cg.current_func.unwrap();
                 let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
@@ -204,11 +226,18 @@ impl Codegen for ast::Statement {
 
                 cg.builder.position_at_end(true_bb);
                 positive.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
-                cg.builder.build_unconditional_branch(next_bb);
+
+                let cur_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cur_bb.get_terminator().is_none() {
+                    cg.builder.build_unconditional_branch(next_bb);
+                }
 
                 cg.builder.position_at_end(false_bb);
                 negative.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
-                cg.builder.build_unconditional_branch(next_bb);
+                let cur_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cur_bb.get_terminator().is_none() {
+                    cg.builder.build_unconditional_branch(next_bb);
+                }
 
                 cg.builder.position_at_end(next_bb);
             },
@@ -257,6 +286,12 @@ impl Codegen for ast::Statement {
                 cg.builder.position_at_end(next_bb);
             },
             S::Return(maybe_expr) => {
+                let func = cg.current_func.unwrap();
+                let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cond_bb.get_terminator().is_some() {
+                    cond_bb = cg.ctx.append_basic_block(func, "cond_bb");
+                    cg.builder.position_at_end(cond_bb);
+                }
                 match maybe_expr {
                     Some(expr) => {
                         let retval = expr.codegen(cg).unwrap();
@@ -346,7 +381,11 @@ impl Codegen for ast::FuncDefinition {
             };
             ty.fn_type(arg_types.as_slice(), false)
         } else {
-            ctx.void_type().fn_type(arg_types.as_slice(), false)
+            if self.name == MAIN_FN {
+                ctx.i32_type().fn_type(arg_types.as_slice(), false)
+            } else {
+                ctx.void_type().fn_type(arg_types.as_slice(), false)
+            }
         };
 
         let mut env = Env {

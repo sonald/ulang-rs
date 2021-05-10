@@ -2,7 +2,7 @@ use ::ulang::parser::*;
 use ::ulang::codegen::*;
 use structopt::StructOpt;
 use std::fs::File;
-use std::io::Result;
+use std::io::{Error, ErrorKind, Result};
 use std::io::prelude::*;
 use inkwell::context::Context;
 use inkwell::OptimizationLevel;
@@ -84,6 +84,11 @@ fn run(filename: Option<&str>, cmd: &CompileCommand) -> Result<()> {
     if cmd.dump_ast {
         module.print_to_stderr();
     }
+    if let Err(err) = module.verify() {
+        eprintln!("{}", err.to_string_lossy());
+
+        return Err(Error::from(ErrorKind::InvalidInput));
+    }
 
     if let Some(main_fn) = module.get_function(MAIN_FN) {
         let main = main_fn.get_name().to_string_lossy();
@@ -102,7 +107,7 @@ fn run(filename: Option<&str>, cmd: &CompileCommand) -> Result<()> {
 fn main() {
     let opt = Options::from_args();
     match opt.commands {
-        Commands::Compile(ref cmd) => run(Some(&cmd.filename), cmd).unwrap(),
+        Commands::Compile(ref cmd) => run(Some(&cmd.filename), cmd).expect("error"),
         Commands::Repl => repl(false),
     }
 }
