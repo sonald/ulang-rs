@@ -27,7 +27,12 @@ pub fn main(args string[]) {
     z += x;
     z -= y;
 
-    z += test2();
+    x = 0;
+    if x == 0 {
+        z += test2();
+    } else {
+        z = 0;
+    }
     return z;
 }
 

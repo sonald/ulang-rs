@@ -95,7 +95,7 @@ impl Codegen for ast::Expression {
             E::UnaryExpr{op, expr} => {
                 let mut val = expr.codegen(cg).unwrap().unwrap();
                 if val.is_pointer_value() {
-                    val = cg.builder.build_load(val.into_pointer_value(), "ptrtmp");
+                    val = cg.builder.build_load(val.into_pointer_value(), "p");
                 }
 
                 let fun = match op {
@@ -103,33 +103,28 @@ impl Codegen for ast::Expression {
                     &Op::Not => Builder::build_not,
                     _ => unreachable!("invalid unary operator"),
                 };
-                Ok(Some(fun(cg.builder, val.into_int_value(), "unarytmp").as_basic_value_enum()))
+                Ok(Some(fun(cg.builder, val.into_int_value(), "").as_basic_value_enum()))
             },
             E::BinaryExpr{op, lhs, rhs} => {
                 let mut lval = lhs.codegen(cg).unwrap().unwrap();
                 let mut rval = rhs.codegen(cg).unwrap().unwrap();
                 if lval.is_pointer_value() {
-                    lval = cg.builder.build_load(lval.into_pointer_value(), "lvaltmp");
+                    lval = cg.builder.build_load(lval.into_pointer_value(), "ltmp");
                 }
                 if rval.is_pointer_value() {
-                    rval = cg.builder.build_load(rval.into_pointer_value(), "rvaltmp");
+                    rval = cg.builder.build_load(rval.into_pointer_value(), "rtmp");
                 }
                 let v = match op {
-                    &Op::Minus => {
-                        cg.builder.build_int_sub(
-                            lval.into_int_value(), rval.into_int_value(), "subtmp")
-                    },
-                    &Op::Plus => {
-                        cg.builder.build_int_add(
-                            lval.into_int_value(), rval.into_int_value(), "addtmp")
-                    },
-                    &Op::Multiply => {
-                        cg.builder.build_int_mul(
-                            lval.into_int_value(), rval.into_int_value(), "multmp")
-                    },
-                    &Op::Divide => {
-                        cg.builder.build_int_signed_div(
-                            lval.into_int_value(), rval.into_int_value(), "divtmp")
+                    &Op::Minus  | &Op::Plus | &Op::Multiply | &Op::Divide => {
+                        let fun = match op {
+                            &Op::Minus => Builder::build_int_sub,
+                            &Op::Plus => Builder::build_int_add,
+                            &Op::Multiply => Builder::build_int_mul,
+                            &Op::Divide => Builder::build_int_signed_div,
+                            _ => unreachable!(""),
+                        };
+
+                        fun(cg.builder, lval.into_int_value(), rval.into_int_value(), "")
                     },
                     &Op::Greater | &Op::GreaterEqual | &Op::Less 
                         | &Op::LessEqual | &Op::Equal | &Op::NotEqual => {
@@ -146,7 +141,7 @@ impl Codegen for ast::Expression {
                         };
 
                         cg.builder.build_int_compare(
-                            pred, lval.into_int_value(), rval.into_int_value(), "icmptmp")
+                            pred, lval.into_int_value(), rval.into_int_value(), "b")
                     },
                     _ => { unimplemented!("") }
                 };
@@ -188,8 +183,36 @@ impl Codegen for ast::Statement {
             S::Expr(e) => {
                 e.codegen(cg).unwrap();
             },
+            S::Conditional{predicate, positive, negative} => {
+                let func = cg.current_func.unwrap();
+                let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cond_bb.get_terminator().is_some() {
+                    cond_bb = cg.ctx.append_basic_block(func, "cond_bb");
+                    cg.builder.position_at_end(cond_bb);
+                }
+
+                let mut cond = predicate.codegen(cg).unwrap().unwrap();
+                if cond.is_pointer_value() {
+                    cond = cg.builder.build_load(cond.into_pointer_value(), "p");
+                }
+
+                let true_bb = cg.ctx.append_basic_block(func, "true_bb");
+                let false_bb = cg.ctx.append_basic_block(func, "false_bb");
+                let next_bb = cg.ctx.append_basic_block(func, "next_bb");
+
+                cg.builder.build_conditional_branch(cond.into_int_value(), true_bb, false_bb);
+
+                cg.builder.position_at_end(true_bb);
+                positive.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
+                cg.builder.build_unconditional_branch(next_bb);
+
+                cg.builder.position_at_end(false_bb);
+                negative.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
+                cg.builder.build_unconditional_branch(next_bb);
+
+                cg.builder.position_at_end(next_bb);
+            },
             S::Match{expr, arms} => {
-                // convert matches into if-elses for simplicity
                 let func = cg.current_func.unwrap();
                 let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
                 if cond_bb.get_terminator().is_some() {
@@ -199,7 +222,7 @@ impl Codegen for ast::Statement {
 
                 let mut cond = expr.codegen(cg).unwrap().unwrap();
                 if cond.is_pointer_value() {
-                    cond = cg.builder.build_load(cond.into_pointer_value(), "ptrtmp");
+                    cond = cg.builder.build_load(cond.into_pointer_value(), "p");
                 }
 
                 let default_bb = cg.ctx.append_basic_block(func, "default_bb");
@@ -239,7 +262,7 @@ impl Codegen for ast::Statement {
                         let retval = expr.codegen(cg).unwrap();
                         let mut retval = retval.unwrap();
                         if retval.is_pointer_value() {
-                            retval = cg.builder.build_load(retval.into_pointer_value(), "rettmp");
+                            retval = cg.builder.build_load(retval.into_pointer_value(), "retmp");
                         }
                         cg.builder.build_return(Some(&retval));
                     },
@@ -261,7 +284,7 @@ impl Codegen for ast::Statement {
                 use ast::Operator as Op;
                 let mut rval = rhs.codegen(cg).unwrap().unwrap();
                 if rval.is_pointer_value() {
-                    rval = cg.builder.build_load(rval.into_pointer_value(), "ptrtmp");
+                    rval = cg.builder.build_load(rval.into_pointer_value(), "p");
                 }
                 
                 let lval = lhs.codegen(cg).unwrap().unwrap();
@@ -271,13 +294,13 @@ impl Codegen for ast::Statement {
                 let tmp = match op {
                     Op::Assign => rval.into_int_value(),
                     Op::PlusAssign => {
-                        let lval_rval = cg.builder.build_load(ptr, "ptrtmp");
-                        cg.builder.build_int_add(lval_rval.into_int_value(), rval.into_int_value(), "addtmp")
+                        let lval_rval = cg.builder.build_load(ptr, "p");
+                        cg.builder.build_int_add(lval_rval.into_int_value(), rval.into_int_value(), "tmp")
                     },
                     Op::MinusAssign => {
-                        let lval_rval = cg.builder.build_load(ptr, "ptrtmp");
+                        let lval_rval = cg.builder.build_load(ptr, "p");
                         cg.builder
-                            .build_int_sub(lval_rval.into_int_value(), rval.into_int_value(), "subtmp")
+                            .build_int_sub(lval_rval.into_int_value(), rval.into_int_value(), "tmp")
                     },
                     _ => unreachable!(),
                 };
