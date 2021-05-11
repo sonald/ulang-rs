@@ -59,8 +59,22 @@ pub trait Codegen {
 
 
 impl Codegen for ast::CompilationUnit {
+    // two passes
+    // 1. collect all classes and functions declaration
+    // 2. real codegen
     fn codegen<'a, 'b, 'ctx>(&self, cg: &'b mut Backend<'a, 'ctx>) -> CodegenResult<'ctx> {
+        for t in &self.0 {
+            match t {
+                ast::Term::Class(cls) => {
+                },
+                ast::Term::Func(func) => {
+                    func.collect(cg);
+                }
+            }
+        }
+
         self.0.iter().for_each(|t| { t.codegen(cg).expect("compile failed"); });
+
         Ok(None)
     }
 }
@@ -364,6 +378,34 @@ fn name2type<'ctx>(ctx: &'ctx Context, ty_name: &str) -> Box<dyn BasicType<'ctx>
 
 impl Codegen for ast::FuncDefinition {
     fn codegen<'a, 'b, 'ctx>(&self, cg: &'b mut Backend<'a, 'ctx>) -> CodegenResult<'ctx> {
+        self.collect(cg);
+
+        let mut env = Env {
+            syms: vec![]
+        };
+
+        let func = cg.module.get_function(&self.name)
+            .expect(&format!("unknown function({})", self.name));
+        for (i, param) in func.get_param_iter().enumerate() {
+            param.set_name(&self.args[i].name);
+            env.insert(self.args[i].name.clone(), param);
+        }
+        cg.envs.insert(self.name.clone(), env);
+
+        cg.current_func.replace(func.clone());
+
+        let bb = cg.ctx.append_basic_block(func, "entry");
+        cg.builder.position_at_end(bb);
+
+        self.statements.0.iter().for_each(|st| {st.codegen(cg).expect("func def");});
+
+        cg.current_func.take();
+        Ok(None)
+    }
+}
+
+impl ast::FuncDefinition {
+    fn collect<'a, 'b, 'ctx>(&self, cg: &'b mut Backend<'a, 'ctx>) -> FunctionValue<'ctx> {
         eprintln!("cg::FuncDef");
         let ctx = cg.ctx;
 
@@ -388,26 +430,7 @@ impl Codegen for ast::FuncDefinition {
             }
         };
 
-        let mut env = Env {
-            syms: vec![]
-        };
-        let func = cg.module.add_function(&self.name, fn_ty, None);
-
-        for (i, param) in func.get_param_iter().enumerate() {
-            param.set_name(&self.args[i].name);
-            env.insert(self.args[i].name.clone(), param);
-        }
-        cg.envs.insert(self.name.clone(), env);
-
-        cg.current_func.replace(func.clone());
-
-        let bb = ctx.append_basic_block(func, "entry");
-        cg.builder.position_at_end(bb);
-
-        self.statements.0.iter().for_each(|st| {st.codegen(cg).expect("func def");});
-
-        cg.current_func.take();
-        Ok(None)
+        cg.module.add_function(&self.name, fn_ty, None)
     }
 }
 
