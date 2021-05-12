@@ -31,8 +31,27 @@ fn test3() -> int32 {
     return 0;
 }
 
+fn test4() -> int32 {
+    let x = 1;
+    loop {
+        x += 1;
+        if x > 10 {
+            break;
+        }
+    }
+
+    loop {
+        x += 1;
+        if x > 20 {
+            break;
+        }
+    }
+
+    return x;
+}
+
 pub fn main(args string[]) {
-    return test1();
+    return test4();
 }
 
 fn test1() -> int32 {

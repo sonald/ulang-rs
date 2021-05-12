@@ -46,6 +46,7 @@ pub struct Backend<'a, 'ctx> {
     pub builder: &'a Builder<'ctx>,
 
     pub current_func: Option<FunctionValue<'ctx>>,
+    pub break_insr: Option<InstructionValue<'ctx>>,
 
     // map<func, env> right now, we only have functions
     pub envs: HashMap<String, Env<'ctx>>,
@@ -100,7 +101,7 @@ impl Codegen for ast::Expression {
         use ast::Operator as Op;
         use inkwell::IntPredicate as Pred;
 
-        eprintln!("cg:{:?}", self);
+        //eprintln!("cg:{:?}", self);
         match self {
             E::DecimalExpr(n) => {
                 let val = cg.ctx.i32_type().const_int(*n as u64, false);
@@ -191,11 +192,20 @@ impl Codegen for ast::Expression {
 
 impl Codegen for ast::Statement {
     fn codegen<'a, 'b, 'ctx>(&self, cg: &'b mut Backend<'a, 'ctx>) -> CodegenResult<'ctx> {
-        eprintln!("cg:Stmt {:?}", self);
+        //eprintln!("cg:Stmt {:?}", self);
         use ast::Statement as S;
         match self {
             S::Expr(e) => {
                 e.codegen(cg).unwrap();
+            },
+            S::Break => {
+                let func = cg.current_func.unwrap();
+                let cur_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                assert!(cur_bb.get_terminator().is_none());
+
+                assert!(cg.break_insr.is_none());
+                cg.break_insr = Some(cg.builder.build_unconditional_branch(cur_bb));
+                eprintln!("---- break {:?}", cur_bb);
             },
             S::Loop(statements) => {
                 let func = cg.current_func.unwrap();
@@ -218,12 +228,23 @@ impl Codegen for ast::Statement {
 
                 cg.builder.position_at_end(loop_tail);
                 cg.builder.build_unconditional_branch(loop_entry);
+
+                if let Some(insr) = cg.break_insr.take() {
+                    let after = cg.ctx.append_basic_block(func, "loop_after");
+
+                    let target = insr.get_parent().unwrap();
+                    insr.erase_from_basic_block();
+                    cg.builder.position_at_end(target);
+                    cg.builder.build_unconditional_branch(after);
+
+                    cg.builder.position_at_end(after);
+                }
             },
             S::Conditional{predicate, positive, negative} => {
                 let func = cg.current_func.unwrap();
                 let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
                 if cond_bb.get_terminator().is_some() {
-                    cond_bb = cg.ctx.append_basic_block(func, "cond_bb");
+                    cond_bb = cg.ctx.append_basic_block(func, "ifcond_bb");
                     cg.builder.position_at_end(cond_bb);
                 }
 
@@ -259,7 +280,7 @@ impl Codegen for ast::Statement {
                 let func = cg.current_func.unwrap();
                 let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
                 if cond_bb.get_terminator().is_some() {
-                    cond_bb = cg.ctx.append_basic_block(func, "cond_bb");
+                    cond_bb = cg.ctx.append_basic_block(func, "match_cond_bb");
                     cg.builder.position_at_end(cond_bb);
                 }
 
@@ -303,7 +324,8 @@ impl Codegen for ast::Statement {
                 let func = cg.current_func.unwrap();
                 let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
                 if cond_bb.get_terminator().is_some() {
-                    cond_bb = cg.ctx.append_basic_block(func, "cond_bb");
+                    eprintln!("{:?}", cond_bb);
+                    cond_bb = cg.ctx.append_basic_block(func, "ret_bb");
                     cg.builder.position_at_end(cond_bb);
                 }
                 match maybe_expr {
@@ -311,7 +333,7 @@ impl Codegen for ast::Statement {
                         let retval = expr.codegen(cg).unwrap();
                         let mut retval = retval.unwrap();
                         if retval.is_pointer_value() {
-                            retval = cg.builder.build_load(retval.into_pointer_value(), "retmp");
+                            retval = cg.builder.build_load(retval.into_pointer_value(), "");
                         }
                         cg.builder.build_return(Some(&retval));
                     },
@@ -443,6 +465,7 @@ impl<'a, 'ctx> Backend<'a, 'ctx> {
             builder,
 
             current_func: None,
+            break_insr: None,
 
             envs: HashMap::new()
         }
