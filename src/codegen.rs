@@ -2,7 +2,7 @@ use crate::parser::*;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
-use inkwell::basic_block::BasicBlock;
+use inkwell::passes::PassManager;
 use inkwell::values::*;
 use inkwell::types::*;
 
@@ -44,6 +44,7 @@ pub struct Backend<'a, 'ctx> {
     pub ctx: &'ctx Context,
     pub module: &'a Module<'ctx>,
     pub builder: &'a Builder<'ctx>,
+    pub fpm: &'a PassManager<FunctionValue<'ctx>>,
 
     pub current_func: Option<FunctionValue<'ctx>>,
     pub break_insr: Option<InstructionValue<'ctx>>,
@@ -421,7 +422,8 @@ impl Codegen for ast::FuncDefinition {
 
         self.statements.0.iter().for_each(|st| {st.codegen(cg).expect("func def");});
 
-        cg.current_func.take();
+        let f = cg.current_func.take().unwrap();
+        cg.fpm.run_on(&f);
         Ok(None)
     }
 }
@@ -457,12 +459,14 @@ impl ast::FuncDefinition {
 }
 
 impl<'a, 'ctx> Backend<'a, 'ctx> {
-    pub fn new(ctx: &'ctx Context, module: &'a Module<'ctx>, builder: &'a Builder<'ctx>) -> Self {
+    pub fn new(ctx: &'ctx Context, module: &'a Module<'ctx>,
+        builder: &'a Builder<'ctx>, fpm: &'a PassManager<FunctionValue<'ctx>>) -> Self {
         Backend {
             name: "default".to_owned(),
             ctx,
             module,
             builder,
+            fpm,
 
             current_func: None,
             break_insr: None,

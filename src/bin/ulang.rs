@@ -5,7 +5,9 @@ use std::fs::File;
 use std::io::{Error, ErrorKind, Result};
 use std::io::prelude::*;
 use inkwell::context::Context;
+use inkwell::values::FunctionValue;
 use inkwell::OptimizationLevel;
+use inkwell::passes::{PassManager, PassManagerBuilder};
 
 #[derive(Debug, StructOpt)]
 struct Options {
@@ -26,10 +28,14 @@ enum Commands {
 struct CompileCommand {
     #[structopt(short, long)]
     dump_ast: bool,
-    #[structopt(short="-D", long)]
+    #[structopt(short="D", long)]
     debug: bool,
     #[structopt(short, long, help="execute the compiled code")]
     execute: bool,
+    #[structopt(short="O", default_value="1", help="optimize level")]
+    optimize: i32,
+    #[structopt(short="E", long, help="emit llvm ir")]
+    emit_ir: bool,
 
     filename: String
 }
@@ -42,7 +48,10 @@ fn repl(dump_ast: bool) {
     let ctx = Context::create();
     let module = ctx.create_module("ulang_mod");
     let builder = ctx.create_builder();
-    let mut cg = Backend::new(&ctx, &module, &builder);
+
+    let mpm = PassManager::<FunctionValue>::create(&module);
+    mpm.initialize();
+    let mut cg = Backend::new(&ctx, &module, &builder, &mpm);
     ast.codegen(&mut cg).expect("compile failed");
     if dump_ast {
         module.print_to_stderr();
@@ -78,11 +87,29 @@ fn run(filename: Option<&str>, cmd: &CompileCommand) -> Result<()> {
     let ctx = Context::create();
     let module = ctx.create_module("ulang_mod");
     let builder = ctx.create_builder();
-    let mut cg = Backend::new(&ctx, &module, &builder);
+    let pmb = PassManagerBuilder::create();
+    //-O1
+    pmb.set_optimization_level(OptimizationLevel::Default);
+
+    let mpm = PassManager::<FunctionValue>::create(&module);
+    if cmd.optimize == 1 {
+        //mpm.add_constant_merge_pass(); // this'll crash
+        mpm.add_gvn_pass();
+        mpm.add_cfg_simplification_pass();
+        mpm.add_basic_alias_analysis_pass();
+        mpm.add_promote_memory_to_register_pass();
+        mpm.add_instruction_combining_pass();
+        mpm.add_reassociate_pass();
+        mpm.add_constant_propagation_pass();
+    }
+    mpm.initialize();
+    let mut cg = Backend::new(&ctx, &module, &builder, &mpm);
 
     ast.codegen(&mut cg).expect("compile failed");
-    if cmd.dump_ast {
-        module.print_to_stderr();
+    if cmd.emit_ir {
+        let s = module.print_to_string();
+        print!("{}", s.to_string_lossy());
+        return Ok(());
     }
     if let Err(err) = module.verify() {
         eprintln!("{}", err.to_string_lossy());
