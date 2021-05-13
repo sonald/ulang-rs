@@ -72,7 +72,7 @@ pub enum Statement {
     },
     For {
         var: SymbolName,
-        expr: SymbolName,
+        expr: Expression,
         block: StatementBlock
     },
     Assignment {
@@ -138,6 +138,10 @@ pub enum Expression {
         args: ExpressionList
     },
     RangeExpr {
+        start: i32,
+        end: i32,
+    },
+    SliceExpr {
         start: Option<Box<Expression>>,
         end: Option<Box<Expression>>,
     },
@@ -268,10 +272,10 @@ impl Display for Expression {
             FieldExpr{object, field} => write!(f, "{}.{}", object, field),
             Tuple(v) => write!(f, "{}", v),
             CallExpr{callee, args} => write!(f, "{}({})", callee, args),
-            RangeExpr{start, end} => 
-                write!(f, "{}:{}", 
+            SliceExpr{start, end} => write!(f, "{}:{}", 
                     start.as_ref().map_or("".to_owned(), |e| format!("{}", e)),
                     end.as_ref().map_or("".to_owned(), |e| format!("{}", e))),
+            RangeExpr{start, end} => write!(f, "{}..{}", start, end),
             IndexExpr{object, index} => write!(f, "{}[{}]", object, index),
             Block{stats, expr} => {
                 write!(f, "{{\n")?;

@@ -26,6 +26,14 @@ impl<'ctx> Env<'ctx> {
         self.syms.iter().rev().find_map(|t| t.get(nm))
     }
 
+    pub fn remove(&mut self, nm: &String) {
+        if self.syms.is_empty() {
+            return;
+        }
+
+        self.syms.last_mut().map(|tbl| tbl.remove(nm));
+    }
+
     pub fn insert(&mut self, nm: String, value: BasicValueEnum<'ctx>) {
         if self.syms.is_empty() {
             self.syms.push(HashMap::new());
@@ -199,8 +207,59 @@ impl Codegen for ast::Statement {
             S::Expr(e) => {
                 e.codegen(cg).unwrap();
             },
-            S::Break => {
+            S::For{var, expr, block} => {
                 let func = cg.current_func.unwrap();
+                let for_loop = cg.ctx.append_basic_block(func, "for_loop");
+                let block_bb = cg.ctx.append_basic_block(func, "block_bb");
+                let for_tail = cg.ctx.append_basic_block(func, "for_tail");
+                let after = cg.ctx.append_basic_block(func, "for_after");
+
+                let mut cond_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if cond_bb.get_terminator().is_some() {
+                    cond_bb = cg.ctx.append_basic_block(func, "for_entry");
+                    cg.builder.position_at_end(cond_bb);
+                }
+
+                cg.builder.position_at_end(cond_bb);
+
+                let rng = match expr {
+                    ast::Expression::RangeExpr{start,end} => (start, end),
+                    _ => unimplemented!("invalid range expr"),
+                };
+
+                let init = cg.ctx.i32_type().const_int(*rng.0 as u64, false);
+                let end_val = cg.ctx.i32_type().const_int(*rng.1 as u64, false);
+                let ptr = cg.builder.build_alloca(init.get_type(), &var);
+                cg.builder.build_store(ptr, init);
+                cg.builder.build_unconditional_branch(for_loop);
+
+                cg.insert_symbol(var.clone(), ptr.as_basic_value_enum());
+
+                cg.builder.position_at_end(for_loop);
+                let ptr_val = cg.builder.build_load(ptr, "");
+                let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::UGT, ptr_val.into_int_value(), end_val, "");
+                cg.builder.build_conditional_branch(cmp, after, block_bb);
+
+                cg.builder.position_at_end(block_bb);
+                block.0.iter().for_each(|st| {st.codegen(cg).unwrap();});
+
+                let next_bb = cg.builder.get_insert_block().expect("invalid insert block");
+                if next_bb.get_terminator().is_none() {
+                    cg.builder.build_unconditional_branch(for_tail);
+                }
+
+                cg.builder.position_at_end(for_tail);
+                let cur_val = cg.builder.build_load(ptr, "");
+                let const_one = cg.ctx.i32_type().const_int(1, false);
+                let next_val = cg.builder.build_int_add(cur_val.into_int_value(), const_one, "");
+                cg.builder.build_store(ptr, next_val);
+                cg.builder.build_unconditional_branch(for_loop);
+
+                cg.remove_symbol(&var);
+
+                cg.builder.position_at_end(after);
+            },
+            S::Break => {
                 let cur_bb = cg.builder.get_insert_block().expect("invalid insert block");
                 assert!(cur_bb.get_terminator().is_none());
 
@@ -430,7 +489,7 @@ impl Codegen for ast::FuncDefinition {
 
 impl ast::FuncDefinition {
     fn collect<'a, 'b, 'ctx>(&self, cg: &'b mut Backend<'a, 'ctx>) -> FunctionValue<'ctx> {
-        eprintln!("cg::FuncDef");
+        //eprintln!("cg::FuncDef");
         let ctx = cg.ctx;
 
         let arg_types = self.args.iter()
@@ -473,6 +532,14 @@ impl<'a, 'ctx> Backend<'a, 'ctx> {
 
             envs: HashMap::new()
         }
+    }
+
+    pub fn remove_symbol(&mut self, nm: &String) {
+        let func = self.current_func.as_ref().unwrap();
+        let func_nm = func.get_name().to_string_lossy();
+        let env = self.envs.get_mut(func_nm.as_ref()).unwrap();
+
+        env.remove(nm);
     }
 
     pub fn insert_symbol(&mut self, nm: String, value: BasicValueEnum<'ctx>) {

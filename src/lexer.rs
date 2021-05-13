@@ -52,6 +52,10 @@ pub enum UlangToken<'source> {
     Comma,
     #[token(".")]
     Dot,
+    #[token("..")]
+    DotDot,
+    #[token("...")]
+    DotDotDot,
     #[token(";")]
     Semicolon,
     #[token("+")]

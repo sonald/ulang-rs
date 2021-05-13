@@ -32,6 +32,8 @@ extern {
         Colon => UlangToken::Colon,
         Comma => UlangToken::Comma,
         Dot => UlangToken::Dot,
+        DotDot => UlangToken::DotDot,
+        DotDotDot => UlangToken::DotDotDot,
         Semicolon => UlangToken::Semicolon,
         Plus => UlangToken::Plus,
         Minus => UlangToken::Minus,
@@ -154,8 +156,8 @@ statement: ast::Statement = {
         positive: ast::StatementBlock(s1),
         negative: ast::StatementBlock(s2.unwrap_or(vec![]))
     },
-    For <var:Ident> In <expr:Ident> <block:statements_block> => ast::Statement::For {
-        var: var.to_owned(), expr: expr.to_owned(), block: ast::StatementBlock(block)
+    For <var:Ident> In <expr:iteration_expr> <block:statements_block> => ast::Statement::For {
+        var: var.to_owned(), expr: expr, block: ast::StatementBlock(block)
     },
     Match <expr:expression> LBRACE <arms:match_arms> RBRACE => ast::Statement::Match {
         expr: expr, arms: ast::StatementBlock(arms)
@@ -163,6 +165,18 @@ statement: ast::Statement = {
     <expression> Semicolon => ast::Statement::Expr(<>),
     Return <e:expression?> Semicolon => ast::Statement::Return(e),
     Break Semicolon? => ast::Statement::Break,
+}
+
+iteration_expr: ast::Expression = {
+    Ident => ast::Expression::SymbolExpr(<>.to_owned()),
+    bounded_range_expr
+}
+
+bounded_range_expr: ast::Expression = {
+    <lhs:Decimal> DotDot <rhs:Decimal> => ast::Expression::RangeExpr {
+            start: lhs.parse::<i32>().unwrap(),
+            end: rhs.parse::<i32>().unwrap(),
+        },
 }
 
 initializer: ast::Expression = {
@@ -291,12 +305,12 @@ field_expr: ast::Expression = {
 }
 
 index_expr: ast::Expression = {
-    Colon => ast::Expression::RangeExpr {
+    Colon => ast::Expression::SliceExpr {
         start: None, end: None
     },
     <lhs:binary_expr> <rhs:(Colon <binary_expr?>)?> => {
         match rhs {
-            Some(rhs) => ast::Expression::RangeExpr {
+            Some(rhs) => ast::Expression::SliceExpr {
                 start: Some(Box::new(lhs)),
                 end: rhs.map(|e| Box::new(e))
             },

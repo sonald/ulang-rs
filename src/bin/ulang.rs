@@ -81,7 +81,11 @@ fn run(filename: Option<&str>, cmd: &CompileCommand) -> Result<()> {
     let mut p = UlangParser::new(&s);
     let ast = p.parse();
     if cmd.debug {
-        println!("{}", ast);
+        eprintln!("{:?}", ast);
+    }
+
+    if cmd.dump_ast {
+        eprintln!("{}", ast);
     }
 
     let ctx = Context::create();
@@ -106,11 +110,13 @@ fn run(filename: Option<&str>, cmd: &CompileCommand) -> Result<()> {
     let mut cg = Backend::new(&ctx, &module, &builder, &mpm);
 
     ast.codegen(&mut cg).expect("compile failed");
+
     if cmd.emit_ir {
         let s = module.print_to_string();
         print!("{}", s.to_string_lossy());
         return Ok(());
     }
+
     if let Err(err) = module.verify() {
         eprintln!("{}", err.to_string_lossy());
 

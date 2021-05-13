@@ -50,8 +50,17 @@ fn test4() -> int32 {
     return x;
 }
 
+fn test5() -> int32 {
+    let res = 0;
+    for x in 1..10 {
+        res += x;
+    }
+
+    return res;
+}
+
 pub fn main(args string[]) {
-    return test4();
+    return test5();
 }
 
 fn test1() -> int32 {
